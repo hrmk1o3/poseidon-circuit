@@ -52,24 +52,35 @@ impl Circuit<Fp> for TestCircuit {
 
 #[test]
 fn hash_circuit() {
-    let message1 = [
+    let input1 = [
         Fp::from_str_vartime("1").unwrap(),
         Fp::from_str_vartime("2").unwrap(),
     ];
-    let message2 = [
+    let input2 = [
         Fp::from_str_vartime("0").unwrap(),
         Fp::from_str_vartime("1").unwrap(),
     ];
 
+    let mut state = [Fp::zero(), input1[0], input1[1]];
+    let hash_helper = Fp::hasher();
+    hash_helper.permute(&mut state);
+    let output1 = Some(state[0]);
+
+    let mut state = [Fp::zero(), input2[0], input2[1]];
+    let hash_helper = Fp::hasher();
+    hash_helper.permute(&mut state);
+    let output2 = Some(state[0]);
+
     let k = 7;
     let circuit = TestCircuit(
         PoseidonHashTable {
-            inputs: vec![message1, message2],
+            inputs: vec![input1, input2],
+            checks: vec![output1, output2],
             ..Default::default()
         },
         3,
     );
-    let prover = MockProver::run(k, &circuit, vec![]).unwrap();
+    let prover = halo2_proofs::dev::MockProver::run(k, &circuit, vec![]).unwrap();
     assert_eq!(prover.verify(), Ok(()));
 }
 

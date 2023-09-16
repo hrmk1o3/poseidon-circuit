@@ -310,19 +310,25 @@ impl<
     pub fn hash(
         mut self,
         mut layouter: impl Layouter<F>,
-        message: [AssignedCell<F, F>; L],
+        message: &[AssignedCell<F, F>],
     ) -> Result<AssignedCell<F, F>, Error> {
+        let l = message.len();
+        let k = (l + RATE - 1) / RATE;
         for (i, value) in message
-            .into_iter()
+            .iter()
+            .cloned()
             .map(PaddedWord::Message)
-            .chain(<ConstantLength<L> as Domain<F, RATE>>::padding(L).map(PaddedWord::Padding))
+            .chain(
+                // <ConstantLength<L> as Domain<F, RATE>>::padding(L).map(PaddedWord::Padding)
+                std::iter::repeat(F::zero()).take(k * RATE - l).map(PaddedWord::Padding)
+            )
             .enumerate()
         {
             self.sponge
-                .absorb(layouter.namespace(|| format!("absorb_{i}")), value)?;
+                .absorb(layouter.namespace(|| format!("absorb_{i}")), value).unwrap();
         }
         self.sponge
-            .finish_absorbing(layouter.namespace(|| "finish absorbing"))?
+            .finish_absorbing(layouter.namespace(|| "finish absorbing")).unwrap()
             .squeeze(layouter.namespace(|| "squeeze"))
     }
 }

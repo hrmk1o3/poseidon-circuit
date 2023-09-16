@@ -897,8 +897,8 @@ mod tests {
                         )
                     };
 
-                    let message: Result<Vec<_>, Error> = (0..L).map(message_word).collect();
-                    Ok(message?.try_into().unwrap())
+                    let message = (0..L).map(message_word).collect::<Result<Vec<_>, _>>()?;
+                    Ok(message)
                 },
             )?;
 
@@ -906,7 +906,7 @@ mod tests {
                 chip,
                 layouter.namespace(|| "init"),
             )?;
-            let output = hasher.hash(layouter.namespace(|| "hash"), message)?;
+            let output = hasher.hash(layouter.namespace(|| "hash"), &message)?;
 
             layouter.assign_region(
                 || "constrain output",
