@@ -78,13 +78,12 @@ pub trait PoseidonInstructions<F: FieldExt, S: Spec<F, T, RATE>, const T: usize,
 pub trait PoseidonSpongeInstructions<
     F: FieldExt,
     S: Spec<F, T, RATE>,
-    D: Domain<F, RATE>,
     const T: usize,
     const RATE: usize,
 >: PoseidonInstructions<F, S, T, RATE>
 {
     /// Returns the initial empty state for the given domain.
-    fn initial_state(&self, layouter: &mut impl Layouter<F>)
+    fn initial_state(&self, layouter: &mut impl Layouter<F>, initial_capacity_element: &[F])
         -> Result<State<Self::Word, T>, Error>;
 
     /// Adds the given input to the state.
@@ -132,9 +131,8 @@ impl<
 
 fn poseidon_sponge<
     F: FieldExt,
-    PoseidonChip: PoseidonSpongeInstructions<F, S, D, T, RATE>,
+    PoseidonChip: PoseidonSpongeInstructions<F, S, T, RATE>,
     S: Spec<F, T, RATE>,
-    D: Domain<F, RATE>,
     const T: usize,
     const RATE: usize,
 >(
@@ -154,31 +152,31 @@ fn poseidon_sponge<
 #[derive(Debug)]
 pub struct Sponge<
     F: FieldExt,
-    PoseidonChip: PoseidonSpongeInstructions<F, S, D, T, RATE>,
+    PoseidonChip: PoseidonSpongeInstructions<F, S, T, RATE>,
     S: Spec<F, T, RATE>,
     M: SpongeMode,
-    D: Domain<F, RATE>,
     const T: usize,
     const RATE: usize,
 > {
-    chip: PoseidonChip,
-    mode: M,
-    state: State<PoseidonChip::Word, T>,
-    _marker: PhantomData<D>,
+    /// chip
+    pub chip: PoseidonChip,
+    /// mode
+    pub mode: M,
+    /// state
+    pub state: State<PoseidonChip::Word, T>,
 }
 
 impl<
         F: FieldExt,
-        PoseidonChip: PoseidonSpongeInstructions<F, S, D, T, RATE>,
+        PoseidonChip: PoseidonSpongeInstructions<F, S, T, RATE>,
         S: Spec<F, T, RATE>,
-        D: Domain<F, RATE>,
         const T: usize,
         const RATE: usize,
-    > Sponge<F, PoseidonChip, S, Absorbing<PaddedWord<F>, RATE>, D, T, RATE>
+    > Sponge<F, PoseidonChip, S, Absorbing<PaddedWord<F>, RATE>, T, RATE>
 {
     /// Constructs a new duplex sponge for the given Poseidon specification.
-    pub fn new(chip: PoseidonChip, mut layouter: impl Layouter<F>) -> Result<Self, Error> {
-        chip.initial_state(&mut layouter).map(|state| Sponge {
+    pub fn new(chip: PoseidonChip, mut layouter: impl Layouter<F>, initial_capacity_elements: &[F]) -> Result<Self, Error> {
+        chip.initial_state(&mut layouter, initial_capacity_elements).map(|state| Sponge {
             chip,
             mode: Absorbing(
                 (0..RATE)
@@ -188,7 +186,6 @@ impl<
                     .unwrap(),
             ),
             state,
-            _marker: PhantomData::default(),
         })
     }
 
@@ -222,7 +219,7 @@ impl<
     pub fn finish_absorbing(
         mut self,
         mut layouter: impl Layouter<F>,
-    ) -> Result<Sponge<F, PoseidonChip, S, Squeezing<PoseidonChip::Word, RATE>, D, T, RATE>, Error>
+    ) -> Result<Sponge<F, PoseidonChip, S, Squeezing<PoseidonChip::Word, RATE>, T, RATE>, Error>
     {
         let mode = poseidon_sponge(
             &self.chip,
@@ -235,19 +232,17 @@ impl<
             chip: self.chip,
             mode,
             state: self.state,
-            _marker: PhantomData::default(),
         })
     }
 }
 
 impl<
         F: FieldExt,
-        PoseidonChip: PoseidonSpongeInstructions<F, S, D, T, RATE>,
+        PoseidonChip: PoseidonSpongeInstructions<F, S, T, RATE>,
         S: Spec<F, T, RATE>,
-        D: Domain<F, RATE>,
         const T: usize,
         const RATE: usize,
-    > Sponge<F, PoseidonChip, S, Squeezing<PoseidonChip::Word, RATE>, D, T, RATE>
+    > Sponge<F, PoseidonChip, S, Squeezing<PoseidonChip::Word, RATE>, T, RATE>
 {
     /// Squeezes an element from the sponge.
     pub fn squeeze(&mut self, mut layouter: impl Layouter<F>) -> Result<AssignedCell<F, F>, Error> {
@@ -273,38 +268,35 @@ impl<
 #[derive(Debug)]
 pub struct Hash<
     F: FieldExt,
-    PoseidonChip: PoseidonSpongeInstructions<F, S, D, T, RATE>,
+    PoseidonChip: PoseidonSpongeInstructions<F, S, T, RATE>,
     S: Spec<F, T, RATE>,
-    D: Domain<F, RATE>,
     const T: usize,
     const RATE: usize,
 > {
-    sponge: Sponge<F, PoseidonChip, S, Absorbing<PaddedWord<F>, RATE>, D, T, RATE>,
+    sponge: Sponge<F, PoseidonChip, S, Absorbing<PaddedWord<F>, RATE>, T, RATE>,
 }
 
 impl<
         F: FieldExt,
-        PoseidonChip: PoseidonSpongeInstructions<F, S, D, T, RATE>,
+        PoseidonChip: PoseidonSpongeInstructions<F, S, T, RATE>,
         S: Spec<F, T, RATE>,
-        D: Domain<F, RATE>,
         const T: usize,
         const RATE: usize,
-    > Hash<F, PoseidonChip, S, D, T, RATE>
+    > Hash<F, PoseidonChip, S, T, RATE>
 {
     /// Initializes a new hasher.
-    pub fn init(chip: PoseidonChip, layouter: impl Layouter<F>) -> Result<Self, Error> {
-        Sponge::new(chip, layouter).map(|sponge| Hash { sponge })
+    pub fn init(chip: PoseidonChip, layouter: impl Layouter<F>, initial_capacity_elements: &[F]) -> Result<Self, Error> {
+        Sponge::new(chip, layouter, initial_capacity_elements).map(|sponge| Hash { sponge })
     }
 }
 
 impl<
         F: FieldExt,
-        PoseidonChip: PoseidonSpongeInstructions<F, S, ConstantLength<L>, T, RATE>,
+        PoseidonChip: PoseidonSpongeInstructions<F, S, T, RATE>,
         S: Spec<F, T, RATE>,
         const T: usize,
         const RATE: usize,
-        const L: usize,
-    > Hash<F, PoseidonChip, S, ConstantLength<L>, T, RATE>
+    > Hash<F, PoseidonChip, S, T, RATE>
 {
     /// Hashes the given input.
     pub fn hash(

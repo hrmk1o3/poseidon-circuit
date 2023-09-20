@@ -347,18 +347,18 @@ impl<F: FieldExt, S: Spec<F, WIDTH, RATE>, const WIDTH: usize, const RATE: usize
 impl<
         F: FieldExt,
         S: Spec<F, WIDTH, RATE>,
-        D: Domain<F, RATE>,
         const WIDTH: usize,
         const RATE: usize,
-    > PoseidonSpongeInstructions<F, S, D, WIDTH, RATE> for Pow5Chip<F, WIDTH, RATE>
+    > PoseidonSpongeInstructions<F, S, WIDTH, RATE> for Pow5Chip<F, WIDTH, RATE>
 {
     fn initial_state(
         &self,
         layouter: &mut impl Layouter<F>,
+        initial_capacity_elements: &[F],
     ) -> Result<State<Self::Word, WIDTH>, Error> {
         let config = self.config();
         let state = layouter.assign_region(
-            || format!("initial state for domain {}", D::name()),
+            || "initial state",
             |mut region| {
                 let mut state = Vec::with_capacity(WIDTH);
                 let mut load_state_word = |i: usize, value: F| -> Result<_, Error> {
@@ -376,7 +376,10 @@ impl<
                 for i in 0..RATE {
                     load_state_word(i, F::zero())?;
                 }
-                load_state_word(RATE, D::initial_capacity_element())?;
+                assert_eq!(initial_capacity_elements.len(), WIDTH - RATE);
+                for (i, element) in (RATE..WIDTH).zip(initial_capacity_elements) {
+                    load_state_word(i, *element)?;
+                }
 
                 Ok(state)
             },
@@ -393,7 +396,7 @@ impl<
     ) -> Result<State<Self::Word, WIDTH>, Error> {
         let config = self.config();
         layouter.assign_region(
-            || format!("add input for domain {}", D::name()),
+            || "add input",
             |mut region| {
                 config.s_pad_and_add.enable(&mut region, 1)?;
 
@@ -703,6 +706,7 @@ impl<F: FieldExt, const WIDTH: usize> Pow5State<F, WIDTH> {
 #[cfg(test)]
 mod tests {
     use crate::poseidon::primitives::pasta::{test_vectors, Fp};
+    use halo2_proofs::halo2curves::FieldExt;
     use halo2_proofs::halo2curves::group::ff::{Field, PrimeField};
     use halo2_proofs::{
         circuit::{Layouter, SimpleFloorPlanner, Value},
@@ -902,9 +906,10 @@ mod tests {
                 },
             )?;
 
-            let hasher = Hash::<_, _, S, ConstantLength<L>, WIDTH, RATE>::init(
+            let hasher = Hash::<_, _, S, WIDTH, RATE>::init(
                 chip,
                 layouter.namespace(|| "init"),
+                &[Fp::from_u128((L as u128) << 64)]
             )?;
             let output = hasher.hash(layouter.namespace(|| "hash"), &message)?;
 
