@@ -158,9 +158,23 @@ impl<F: CachedConstants, S: Spec<F, WIDTH, RATE>> PoseidonInstructions<F, S, WID
                 }
             })
             .collect::<Vec<_>>();
-        layouter
-            .assign_regions(|| "permute state", assignments)
-            .map(|e| e.into_iter().flatten().collect::<Vec<_>>())
+        #[cfg(feature = "parallel_syn")]
+        {
+            layouter
+                .assign_regions(|| "permute state", assignments)
+                .map(|e| e.into_iter().flatten().collect::<Vec<_>>())
+        }
+        #[cfg(not(feature = "parallel_syn"))]
+        {
+            assignments
+                .into_iter()
+                .enumerate()
+                .map(|(i, assignment)| {
+                    layouter.assign_region(|| format!("permute state {i}"), assignment)
+                })
+                .collect::<Result<Vec<_>, Error>>()
+                .map(|e| e.into_iter().flatten().collect::<Vec<_>>())
+        }
     }
 }
 

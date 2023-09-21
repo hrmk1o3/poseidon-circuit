@@ -927,13 +927,24 @@ where
                     }
                 })
                 .collect::<Vec<_>>();
-            let ret = layouter.assign_regions(|| "hash table", assignments)?;
 
             let mut states_in = vec![];
             let mut states_out = vec![];
-            for (s_in, s_out) in ret.into_iter() {
-                states_in.extend(s_in);
-                states_out.extend(s_out);
+            #[cfg(feature = "parallel_syn")]
+            {
+                let ret = layouter.assign_regions(|| "hash table", assignments)?;
+                for (s_in, s_out) in ret.into_iter() {
+                    states_in.extend(s_in);
+                    states_out.extend(s_out);
+                }
+            }
+            #[cfg(not(feature = "parallel_syn"))]
+            {
+                for (i, assignment) in assignments.into_iter().enumerate() {
+                    let (s_in, s_out) = layouter.assign_region(|| format!("hash table {i}"), assignment)?;
+                    states_in.extend(s_in);
+                    states_out.extend(s_out);
+                }
             }
             log::info!(
                 "hash table parallel version took {:?}",
@@ -1003,7 +1014,7 @@ mod tests {
     use super::*;
     use halo2_proofs::halo2curves::bn256::{Bn256, G1Affine};
     use halo2_proofs::halo2curves::group::ff::PrimeField;
-    use halo2_proofs::plonk::{create_proof, keygen_pk2, verify_proof};
+    use halo2_proofs::plonk::{create_proof, keygen_pk, verify_proof, keygen_vk};
     use halo2_proofs::poly::commitment::ParamsProver;
     use halo2_proofs::poly::kzg::commitment::{KZGCommitmentScheme, ParamsKZG, ParamsVerifierKZG};
     use halo2_proofs::poly::kzg::multiopen::{ProverSHPLONK, VerifierSHPLONK};
@@ -1270,7 +1281,8 @@ mod tests {
             ..Default::default()
         });
 
-        let pk = keygen_pk2(&general_params, &circuit).expect("keygen_pk shouldn't fail");
+        let vk = keygen_vk(&general_params, &circuit).expect("keygen_vk shouldn't fail");
+        let pk = keygen_pk(&general_params, vk, &circuit).expect("keygen_pk shouldn't fail");
 
         set_assignment_env_var("parallel");
         let mut transcript = Blake2bWrite::<_, G1Affine, Challenge255<_>>::init(vec![]);
